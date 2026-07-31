@@ -1,55 +1,50 @@
 import fs from 'fs';
 import path from 'path';
+import {
+    extractGeminiReply,
+    fetchWithTimeout,
+    sendApiError,
+    validateApiRequest,
+    validateHistory,
+} from './_security.js';
 
 export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Método não permitido' });
-    }
+    if (!validateApiRequest(req, res)) return;
 
-    const { history } = req.body; 
-    const apiKey = process.env.GEMINI_API_KEY; 
-
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        return res.status(500).json({ error: 'A chave da API não foi encontrada no servidor.' });
+        console.error('[chat] GEMINI_API_KEY não configurada.');
+        return res.status(503).json({ error: 'Serviço temporariamente indisponível.' });
     }
 
     try {
+        const contents = validateHistory(req.body?.history);
         const filePath = path.join(process.cwd(), 'conhecimento.txt');
         const baseDeConhecimento = fs.readFileSync(filePath, 'utf8');
+        const tools = process.env.ENABLE_WEB_SEARCH === 'true'
+            ? [{ googleSearch: {} }]
+            : undefined;
 
-        const formattedContents = history.map(msg => ({
-            role: msg.role, 
-            parts: [{ text: msg.text }]
-        }));
-
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                systemInstruction: {
-                    parts: [{ text: baseDeConhecimento }]
-                },
-                contents: formattedContents,
-                // ==========================================
-                // NOVO: HABILITA A BUSCA NA WEB DO GOOGLE
-                // ==========================================
-                tools: [
-                    { googleSearch: {} }
-                ]
-            })
-        });
+        const response = await fetchWithTimeout(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    systemInstruction: { parts: [{ text: baseDeConhecimento }] },
+                    contents,
+                    ...(tools ? { tools } : {}),
+                }),
+            },
+        );
 
         const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(data.error.message);
+        if (!response.ok || data.error) {
+            throw new Error(`Gemini respondeu com status ${response.status}.`);
         }
 
-        const aiReply = data.candidates[0].content.parts[0].text;
-        res.status(200).json({ reply: aiReply });
-        
+        return res.status(200).json({ reply: extractGeminiReply(data) });
     } catch (error) {
-        console.error("Erro na API:", error);
-        res.status(500).json({ error: 'Erro ao processar a mensagem.' });
+        return sendApiError(res, error, 'chat');
     }
 }
