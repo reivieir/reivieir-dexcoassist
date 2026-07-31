@@ -351,27 +351,32 @@
 
             try {
                 // APONTA PARA A API ESPECÍFICA DO PORTAL AEVEE
-                const response = await fetch('/api/chat', {
+                const response = await fetch('/api/chat-aevee', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ history: historicoChat })
                 });
 
                 const data = await response.json();
-                chatMessages.removeChild(typingDiv);
+                if (typingDiv.isConnected) typingDiv.remove();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Falha ao processar a mensagem.');
+                }
 
                 if (data.reply) {
                     historicoChat.push({ role: 'model', text: data.reply });
                     const aiDiv = document.createElement('p');
                     aiDiv.className = 'ai-message';
-                    aiDiv.innerHTML = data.reply.replace(/\n/g, '<br>');
+                    aiDiv.style.whiteSpace = 'pre-wrap';
+                    aiDiv.textContent = data.reply;
                     chatMessages.appendChild(aiDiv);
                 } else {
                     throw new Error('Sem resposta');
                 }
 
             } catch (error) {
-                chatMessages.removeChild(typingDiv);
+                if (typingDiv.isConnected) typingDiv.remove();
                 const errorDiv = document.createElement('p');
                 errorDiv.className = 'ai-message';
                 errorDiv.textContent = 'Erro ao conectar com a IA.';

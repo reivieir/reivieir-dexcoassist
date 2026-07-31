@@ -1,0 +1,12 @@
+{
+  "name": "hub-financeiro",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/security.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

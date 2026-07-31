@@ -1,52 +1,44 @@
-// Arquivo: api/chat-caixa.js
+import {
+    extractGeminiReply,
+    fetchWithTimeout,
+    sendApiError,
+    validateApiRequest,
+    validateText,
+} from './_security.js';
+
 export default async function handler(req, res) {
-    // Permite apenas requisições POST
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Método não permitido' });
-    }
+    if (!validateApiRequest(req, res)) return;
 
-    const { prompt, contexto } = req.body;
-    
-    // O Vercel vai puxar a chave secreta daqui, ninguém nunca vai ver!
     const apiKey = process.env.GEMINI_API_KEY;
-
     if (!apiKey) {
-        return res.status(500).json({ error: 'Chave da API ausente no Vercel' });
+        console.error('[chat-caixa] GEMINI_API_KEY não configurada.');
+        return res.status(503).json({ error: 'Serviço temporariamente indisponível.' });
     }
-
-    const promptCompleto = `CONTEXTO DO SISTEMA (DADOS REAIS):\n${contexto}\n\nPERGUNTA DO USUÁRIO:\n${prompt}`;
 
     try {
-        // O servidor do Vercel faz a chamada para o Google
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
+        const prompt = validateText(req.body?.prompt, 'Pergunta', 6_000);
+        const contexto = validateText(req.body?.contexto, 'Contexto', 80_000);
+        const promptCompleto = `CONTEXTO DO SISTEMA:\n${contexto}\n\nPERGUNTA DO USUÁRIO:\n${prompt}`;
+
+        const response = await fetchWithTimeout(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: promptCompleto }] }],
+                    generationConfig: { temperature: 0.2 },
+                }),
             },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: promptCompleto }]
-                }],
-                generationConfig: {
-                    temperature: 0.2 
-                }
-            })
-        });
+        );
 
         const data = await response.json();
-
-        if (data.error) {
-            return res.status(400).json({ error: data.error.message });
+        if (!response.ok || data.error) {
+            throw new Error(`Gemini respondeu com status ${response.status}.`);
         }
 
-        if (data.candidates && data.candidates.length > 0) {
-            const reply = data.candidates[0].content.parts[0].text;
-            return res.status(200).json({ reply });
-        } else {
-            return res.status(500).json({ error: 'A IA não retornou uma resposta válida.' });
-        }
-
+        return res.status(200).json({ reply: extractGeminiReply(data) });
     } catch (error) {
-        return res.status(500).json({ error: 'Erro de conexão no servidor Vercel.' });
+        return sendApiError(res, error, 'chat-caixa');
     }
 }
