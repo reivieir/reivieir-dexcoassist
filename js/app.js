@@ -68,20 +68,23 @@ const dadosConciliacao = [
 function carregarTabela(dados) {
     const tbody = document.getElementById('tabelaCorpo');
     if(!tbody) return;
-    tbody.innerHTML = ''; 
+    tbody.replaceChildren();
 
     dados.forEach(item => {
         const tr = document.createElement('tr');
-        
-        tr.innerHTML = `
-            <td><strong>${item.empresa}</strong></td>
-            <td>${item.conta}</td>
-            <td>${item.cnpj}</td>
-            <td>${item.banco}</td>
-            <td>${item.debito}</td>
-            <td>${item.credito}</td>
-            <td>${item.movimento}</td>
-        `;
+
+        const empresaCell = document.createElement('td');
+        const empresaStrong = document.createElement('strong');
+        empresaStrong.textContent = item.empresa;
+        empresaCell.appendChild(empresaStrong);
+        tr.appendChild(empresaCell);
+
+        ['conta', 'cnpj', 'banco', 'debito', 'credito', 'movimento'].forEach(campo => {
+            const td = document.createElement('td');
+            td.textContent = item[campo] || '';
+            tr.appendChild(td);
+        });
+
         tbody.appendChild(tr);
     });
 }
@@ -98,11 +101,17 @@ function popularFiltros() {
     const bancos = [...new Set(dadosConciliacao.map(item => item.banco))];
 
     empresas.sort().forEach(empresa => {
-        filtroEmpresa.innerHTML += `<option value="${empresa}">${empresa}</option>`;
+        const option = document.createElement('option');
+        option.value = empresa;
+        option.textContent = empresa;
+        filtroEmpresa.appendChild(option);
     });
 
     bancos.sort().forEach(banco => {
-        filtroBanco.innerHTML += `<option value="${banco}">${banco}</option>`;
+        const option = document.createElement('option');
+        option.value = banco;
+        option.textContent = banco;
+        filtroBanco.appendChild(option);
     });
 }
 
@@ -146,9 +155,10 @@ function showTab(tabId) {
 function novoChat() {
     historicoChat = []; 
     const chatMessages = document.getElementById('chatMessages');
-    chatMessages.innerHTML = `
-        <p class="ai-message">Olá! Sou o assistente do Hub. O histórico foi limpo. Como posso ajudar agora?</p>
-    `;
+    const welcomeMessage = document.createElement('p');
+    welcomeMessage.className = 'ai-message';
+    welcomeMessage.textContent = 'Olá! Sou o assistente do Hub. O histórico foi limpo. Como posso ajudar agora?';
+    chatMessages.replaceChildren(welcomeMessage);
 }
 
 function enviarComEnter(event) {
@@ -187,20 +197,25 @@ async function sendMessage() {
         });
 
         const data = await response.json();
-        chatMessages.removeChild(typingDiv);
+        if (typingDiv.isConnected) typingDiv.remove();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Falha ao processar a mensagem.');
+        }
 
         if (data.reply) {
             historicoChat.push({ role: 'model', text: data.reply });
             const aiDiv = document.createElement('p');
             aiDiv.className = 'ai-message';
-            aiDiv.innerHTML = data.reply.replace(/\n/g, '<br>');
+            aiDiv.style.whiteSpace = 'pre-wrap';
+            aiDiv.textContent = data.reply;
             chatMessages.appendChild(aiDiv);
         } else {
             throw new Error('Sem resposta');
         }
 
     } catch (error) {
-        chatMessages.removeChild(typingDiv);
+        if (typingDiv.isConnected) typingDiv.remove();
         const errorDiv = document.createElement('p');
         errorDiv.className = 'ai-message';
         errorDiv.textContent = 'Erro ao conectar. Tente novamente.';
